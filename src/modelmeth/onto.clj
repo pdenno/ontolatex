@@ -1,5 +1,5 @@
 (ns modelmeth.onto
-  "Management of turtle files"
+  "Management of OWL files"
   {:author "Peter Denno"}
   (:require [clojure.pprint :refer (cl-format pprint)]
             [clojure.walk :refer-only (prewalk prewalk-demo)]
@@ -71,6 +71,15 @@
        (re-matches #".*\#(.*)")
        second))
 
+(defn thing-map
+  "Return a map of information about the class. See also query/into-map-with"
+  [thing]
+  (let [sname (short-name thing)]
+    (as-> (apply hash-map (tawny.render/as-form thing :keyword true)) ?map
+      (assoc ?map :short-name sname) ; POD (or label)
+      (assoc ?map :var (intern (:onto-namespace @+params+) (symbol sname)))
+      (assoc ?map :notes (simplify-tawny-annotations (:annotation ?map))))))
+
 (defn clojure-code
   "Return any http://modelmeth.nist.gov/modeling#clojureCode annotation"
   [thing]
@@ -87,16 +96,6 @@
     (when-let [code (clojure-code thing)]
       (= :ignore (:priority (read-string code))))
     true))
-
-(defn thing-map
-  "Return a map of information about the class. See also query/into-map-with"
-  [thing]
-  (reset! diag thing)
-  (let [sname (short-name thing)]
-    (as-> (apply hash-map (tawny.render/as-form thing :keyword true)) ?map
-      (assoc ?map :short-name sname) ; POD (or label)
-      (assoc ?map :var (intern (:onto-namespace @+params+) (symbol sname)))
-      (assoc ?map :notes (simplify-tawny-annotations (:annotation ?map))))))
 
 (defn onto-parent-child-map
   "Define the parent/child relationship as a map."
@@ -186,8 +185,7 @@
     (= n 4) "\\subparagraph"
     :else ""))
 
-
-(defn comment [tmap]
+(defn entity-comment [tmap]
   (some #(when (= (:otype %) :comment) (:literal %))
         (:notes tmap)))
 
@@ -196,14 +194,14 @@
     (println "\n\\begin{description}")
     (doall 
      (map #(println (cl-format nil "   \\item[~A]: ~A"
-                               (:short-name %) (or (comment %) "+++Needs Definition+++")))
+                               (:short-name %) (or (entity-comment %) "+++Needs Definition+++")))
           tmap-list))
     (println "\\end{description}\n")))
   
 (defn write-section-heading
   [section]
   (println (cl-format nil "~A{~A}" (subsub (:depth section)) (:short-name section)))
-  (println (cl-format nil " ~A" (or (comment section) "+++Needs Definition+++"))))
+  (println (cl-format nil " ~A" (or (entity-comment section) "+++Needs Definition+++"))))
 
 ;;; POD Doesn't clojure have something like this?
 (defn by-n
