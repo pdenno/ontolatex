@@ -1,4 +1,4 @@
-(ns modelmeth.onto
+(ns modelmeth.ontolatex
   "Management of OWL files"
   {:author "Peter Denno"}
   (:require [clojure.pprint :refer (cl-format pprint)]

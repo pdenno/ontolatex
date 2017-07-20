@@ -1,6 +1,6 @@
-# onto
+# ontolatex
 
-A Clojure library designed to ... well, that part is up to you.
+A Clojure library for generating LaTeX from OWL ontologies.
 
 ## Usage
 

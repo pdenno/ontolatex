@@ -1,4 +1,4 @@
-(defproject modelmeth/onto "0.1.0-SNAPSHOT"
+(defproject modelmeth/ontolatex "0.1.0-SNAPSHOT"
   :description "OWL Ontology utilities"
   :url "http://modelmeth.nist.gov"
   :license {:name "Eclipse Public License"
