@@ -19,6 +19,7 @@
     OWLOntologyManager OWLOntology IRI
     OWLClassExpression OWLClass OWLAnnotation
     OWLDataProperty OWLObjectProperty
+    OWLDataPropertyExpression ; not useful?
     OWLIndividual OWLDatatype
     OWLObjectPropertyExpression
     OWLNamedObject OWLOntologyID)
@@ -29,7 +30,7 @@
 ;;;  tmap - a hash-map of information collected from obj through the thing-map function.
 
 
-(def diag (atom nil))
+(def ^:private diag (atom nil))
 
 (def +params+ (atom {:section-offset 1
                      :onto-namespace 'onto}))
@@ -57,19 +58,20 @@
   (repeatedly
    5
    (fn []           
-     (map #(owl/remove-ontology-maybe (OWLOntologyID. (owl/iri %))) ontologies))))
+     (doall (map #(owl/remove-ontology-maybe (OWLOntologyID. (owl/iri %))) ontologies)))))
 
 (defn simplify-tawny-annotations
   "Some are (:comment <pairs>). Some are (:annotation code-iri <pairs>)"
   [tawny-notes]
   (vec
-   (map #(let [original %]
-           (as-> original ?note
-               (cond (= (first ?note) :comment) (second ?note),
-                     (= (first ?note) :annotation ) (-> ?note rest rest first))
-               (apply hash-map ?note)
-               (assoc ?note :otype (first original))))
-        tawny-notes)))
+   (doall
+    (map #(let [original %]
+            (as-> original ?note
+              (cond (= (first ?note) :comment) (second ?note),
+                    (= (first ?note) :annotation ) (-> ?note rest rest first))
+              (apply hash-map ?note)
+              (assoc ?note :otype (first original))))
+         tawny-notes))))
 
 (defn short-name
   "Argument is an OWLClassImpl etc."
@@ -97,8 +99,9 @@
          (assoc ?map :short-name sname) ; POD (or label)
          (assoc ?map :var (intern (:onto-namespace @+params+) (symbol sname)))
          (assoc ?map :notes (simplify-tawny-annotations (:annotation ?map)))
-         (assoc ?map :subclass-of (map short-name
-                                       (owl/direct-superclasses obj)))
+         (assoc ?map :subclass-of (doall (map short-name ; POD there are other ways. See notes 2017-07-22. 
+                                              (filter #(instance? OWLClass %)
+                                                      (owl/direct-superclasses obj)))))
          (assoc ?map :properties (properties-of ?map property-map)))))))
 
 (defn clojure-code
@@ -163,7 +166,6 @@
    where every var leaf is followed by a vector representing its subclasses 
    (could be empty)."
   [nested-map]
-  (reset! diag nested-map)
   (clojure.walk/prewalk
    #(if (var? %)
       %
@@ -316,7 +318,6 @@
   (rowl/read :iri "http://qudt.org/2.0/schema/qudt"
              :namespace (create-ns 'onto) ; was onto.qudt
              :location (clojure.java.io/file "resources/SCHEMA_QUDT-v2.0.ttl")))
-
 
 (defn property-characteristics
   "Return a vector containing keywords indicating which of the 7 OWL property
