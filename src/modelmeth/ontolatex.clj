@@ -184,7 +184,7 @@
 
 ;;; I expand the tree with leaf-node maps before navigation and printing
 ;;; because this is the place to calculate :depth.
-(defn latex-leaf-nodes
+(defn onto-leaf-nodes
   "Return the onto vector structure with thing-maps replacing vars."
   [onto-vec property-map]
   (loop [loc (-> onto-vec zip/vector-zip zip/down)]
@@ -212,10 +212,12 @@
   (some #(when (= (:otype %) :comment) (:literal %))
         (:notes tmap)))
 
+;;; write-superclasses:  "Write text describing subtyping relationships."
+(defn- write-superclasses-dispatch [tmap form] form)
+(defmulti write-superclasses #'write-superclasses-dispatch)
+
 ;;; POD Needs work. Doesn't yet describe disjoint / disjoint exhaustive.
-(defn write-subclasses
-  "Write text describing subtyping relationships."
-  [tmap]
+(defmethod write-superclasses :latex [tmap form]
   (let [sname (:short-name tmap)
         stypes (:subclass-of tmap)]
     (doall
@@ -223,10 +225,18 @@
           (repeat (count stypes) sname)
           stypes))))
 
+(defmethod write-superclasses :csv [tmap form]
+  (let [sname (:short-name tmap)
+        stypes (:subclass-of tmap)]
+    (print (cl-format nil "~{~A~^, ~} |" stypes))))
+
+;;;  "Write text describing properties the class is involved in."
+(defn- write-properties-dispatch [tmap form] form)
+(defmulti write-properties #'write-properties-dispatch)
+
 ;;; POD Should this just look at direct properties? 
-(defn write-properties
-  "Write text describing properties the class is involved in."
-  [tmap]
+(defmethod write-properties :latex
+  [tmap form]
   (let [sname (:short-name tmap)]
     (doall
      (map (fn [rel]
@@ -244,22 +254,46 @@
           (:properties tmap)))
     #_(println "\\\\")))
 
-(defn write-concept
-  "Write text about concept."
-  [tmap]
+(defmethod write-properties :csv
+  [tmap form]
+  (let [sname (:short-name tmap)]
+    (print (cl-format nil "| ~A" sname))))
+
+(defn- write-concept-dispatch [tmap form] form)
+(defmulti write-concept #'write-concept-dispatch)
+
+;;;   "Write text about concept."
+(defmethod write-concept :latex
+  [tmap form]
   (let [sname (:short-name tmap)
         comment (entity-comment tmap)]
     (println (cl-format nil "\\\\\\\\   \\textbf{~A}\\\\Description: ~A\\\\"
                         sname (or comment "+++Needs Definition+++")))
-    (write-subclasses tmap)
-    (write-properties tmap)))
+    (write-superclasses tmap form)
+    (write-properties tmap form)))
 
-(defn write-section-heading
-  [section]
+(defmethod write-concept :csv
+  [tmap form]
+  (let [sname (:short-name tmap)
+        comment (entity-comment tmap)]
+    (println (cl-format nil " ~A | ~A " sname (or comment "+++Needs Definition+++")))
+    (write-superclasses tmap form)
+    #_(write-properties tmap form)))
+
+(defn- heading-dispatch [section form] form)
+(defmulti write-section-heading #'heading-dispatch)
+
+(defmethod write-section-heading :latex 
+  [section form]
   (println (cl-format nil "~A{~A}\\\\" (subsub (:depth section)) (:short-name section)))
   (println (cl-format nil "Description: ~A\\\\" (or (entity-comment section) "+++Needs Definition+++")))
-  (write-subclasses section)
-  (write-properties section))
+  (write-superclasses section :latex)
+  (write-properties section :latex))
+
+(defmethod write-section-heading :csv 
+  [section form]
+  #_(write-superclasses section :csv)
+  #_(write-properties section :csv))
 
 ;;; POD Doesn't clojure have something like this?
 (defn by-n
@@ -282,7 +316,7 @@
 
 (defn write-section!
   "Write a \\section, \\subsection etc. Calls itself recursively on zip/children."
-  [loc]
+  [loc form]
   (cond (empty? loc) nil,
         (map? loc) (throw (ex-info "map?" {}))
         (var? loc) (throw (ex-info "var?" {}))
@@ -293,18 +327,18 @@
               section (:section parts)
               concepts (:direct-concepts parts)
               subsections (:subsections parts)]
-          (when section (write-section-heading section))
-          (doall (map write-concept concepts))
-          (doall (map #(write-section! (-> % zip/vector-zip zip/down)) subsections)))))
+          (when section (write-section-heading section form))
+          (doall (map #(write-concept % form) concepts))
+          (doall (map #(write-section! (-> % zip/vector-zip zip/down) form) subsections)))))
 
-(defn latex-write-onto-nodes!
+(defn write-onto-nodes!
   "Write latex for the onto-root structure"
-  [v property-map]
-  (-> v
-      (latex-leaf-nodes property-map)
+  [v property-map form]
+  (-> v 
+      (onto-leaf-nodes property-map)
       zip/vector-zip
       zip/down
-      write-section!))
+      (write-section! form)))
 
 ;;; POD onto.??? parameterize 
 (defn read-base-ontos!
@@ -355,8 +389,8 @@
                     (assoc-in [var :characteristics] (property-characteristics obj o)))))
             {} prop-vars)))
                     
-(defn latex-write-onto!
-  [onto-file out-file uri-base & root-concepts] ; This interns vars, including root-concepts.
+(defn write-onto!
+  [onto-file out-file uri-base form & root-concepts] ; This interns vars, including root-concepts.
   (clear-ontos!)
   (read-base-ontos!)
   (rowl/read :iri (str "http://modelmeth.nist.gov/" uri-base)
@@ -364,25 +398,39 @@
              :location (clojure.java.io/file onto-file))
   (with-open [wrtr (writer out-file)]
     (binding [*out* wrtr]
+      (when (= form :csv)
+        (println "Superclasses | Term | Description"))
       (let [property-map (property-analysis)]
         (doall (map (fn [root-sym]
                       (let [pc-map (onto-parent-child-map (var-get (resolve root-sym)))]
                         (-> (onto-root-map {} [[(resolve root-sym)]] pc-map) 
                             vectify 
-                            (latex-write-onto-nodes! property-map))))
+                            (write-onto-nodes! property-map form))))
                     root-concepts))))))
 
 (defn ops []
-  (latex-write-onto!
+  (write-onto!
    "resources/operations.ttl"
-   "/Users/pdenno/TwoDrive/OneDrive/Repo/Loughborough/Writing/Papers/MAPPING/operations-ontology.tex"
+   ;;"/Users/pdenno/TwoDrive/OneDrive/Repo/Loughborough/Writing/Papers/MAPPING/operations-ontology.tex"
+   "./output/operations-ontology.tex"
    "ops"
+   :latex
    'onto/OperationsDomainConcept))
 
+(defn ops-csv []
+  (write-onto!
+   "resources/operations.ttl"
+   "./output/operations-ontology.csv"
+   "ops"
+   :csv
+   'onto/OperationsDomainConcept))
+
+
 (defn modi []
-  (latex-write-onto!
+  (write-onto!
    "resources/modeling.ttl"
-   "/Users/pdenno/TwoDrive/OneDrive/Repo/Loughborough/Writing/Papers/MAPPING/modeling-ontology.tex"
+   ;;"/Users/pdenno/TwoDrive/OneDrive/Repo/Loughborough/Writing/Papers/MAPPING/modeling-ontology.tex"
+   "./output/modeling-ontology.tex"
    "modeling"
    'onto/Abstract
    'onto/Physical))
