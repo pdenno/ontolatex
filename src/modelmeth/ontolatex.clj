@@ -432,8 +432,20 @@
    ;;"/Users/pdenno/TwoDrive/OneDrive/Repo/Loughborough/Writing/Papers/MAPPING/modeling-ontology.tex"
    "./output/modeling-ontology.tex"
    "modeling"
+   :latex
    'onto/Abstract
    'onto/Physical))
+
+(defn modi-csv []
+  (write-onto!
+   "resources/modeling.ttl"
+   ;;"/Users/pdenno/TwoDrive/OneDrive/Repo/Loughborough/Writing/Papers/MAPPING/modeling-ontology.tex"
+   "./output/modeling-ontology.tex"
+   "modeling"
+   :csv
+   'onto/Abstract
+   'onto/Physical))
+
 
 (defn ppp []
   (binding [clojure.pprint/*print-right-margin* 140]
